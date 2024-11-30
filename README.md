@@ -41,6 +41,13 @@ Our team collaborated extensively throughout the project:
 - **Cost Savings:** The models provide a roadmap for reducing downtime-related losses by millions annually.  
 - **Improved Data Processes:** Highlighting the need for improved data tracking (e.g., machine age) to enhance future analyses.
 
+**Difficulties Encountered:**  
+One of the main challenges was dealing with missing data in critical variables such as machine age and certain equipment-related fields. For instance:
+- **Machine Age Data:** The lack of consistent tracking meant that machine age could only be calculated for planned maintenance events. This limited its application as a predictive feature across all data.
+- **Imbalanced Data:** Some categories (e.g., minor vs. major breakdowns) had disproportionately large or small sample sizes, complicating model training.
+- **Data Completeness:** Many fields had high percentages of missing values, requiring imputation or removal to maintain model quality. Columns with over 80% missing data were ultimately excluded due to their limited value.
+These challenges underscored the importance of improving data collection processes for future predictive analytics.
+
 **Lessons Learned:**  
 - **Data Quality Matters:** Addressing missing data and feature engineering were critical to the project’s success.  
 - **Collaborative Problem-Solving:** Each team member's unique contributions led to a well-rounded solution.  
