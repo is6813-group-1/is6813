@@ -1,0 +1,343 @@
+---
+title: "EDA Case Competition"
+author: "RJ Hazen, Marcus Needham, Hunter Nilsen"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Capstone Final Project - Predictive Maintenece: Swire Coca-Cola
+
+## Introduction
+
+This exploratory data analysis (EDA) focuses on understanding machine breakdowns and maintenance patterns in Swire Coca-Cola’s production plants. The data comes from the Internal Warehouse Controller (IWC) system, which tracks machine downtimes, repairs, and maintenance activities across multiple locations.
+
+### Problem Statement:
+Swire Coca-Cola faces significant losses, around $60 million annually, due to unplanned machine breakdowns. The company wants to reduce these losses by identifying patterns in downtime and developing a predictive maintenance model that can foresee breakdowns before they happen. This would allow the company to better plan for repairs and minimize downtime.
+
+### Objectives:
+The key objectives of this analysis are to:
+- Analyze the distribution of machine downtime across different plants and machines.
+- Compare the effectiveness of preventive vs. unplanned maintenance.
+- Explore how downtime impacts productivity.
+- Identify any seasonal or time-based patterns in breakdowns.
+- Gather insights that will help build a predictive maintenance model to reduce future downtime.
+
+This EDA will lay the groundwork for more advanced analysis aimed at optimizing maintenance schedules and improving production efficiency.
+
+## Questions
+
+1. **Downtime Distribution and Patterns**  
+   - What is the distribution of downtime (in minutes) across different plants and machines?
+
+2. **Predictive Maintenance Insights**  
+   - Which machines or parts are most prone to breakdowns? (Using `EQUIPMENT_ID` and `MAINTENANCE_ITEM`)
+
+3. **Maintenance Type and Effectiveness**  
+   - What percentage of maintenance tasks are preventive (planned) versus corrective (unplanned)? Does preventive maintenance reduce unplanned downtime?
+
+4. **Operational Impact**  
+   - What is the overall impact of downtime on productivity (based on `ACTUAL_WORK_IN_MINUTES`)? Can we quantify the opportunity cost per machine or plant?
+
+5. **Temporal Analysis**  
+   - Are there any seasonal trends in downtime frequency (e.g., more breakdowns during specific months or seasons)?
+
+## Load Libraries
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+```
+
+## Read Data/View Structure
+```{r}
+data <- read.csv("IWC_Work_Orders_Extract.csv")
+
+# Check the structure of the dataset
+str(data)
+
+# Summary of the data
+summary(data)
+
+# Display the first few rows
+head(data)
+```
+## Check NA's
+```{r}
+# Check for missing values
+colSums(is.na(data))
+```
+There are no NA's that we'll have to deal with.
+
+## Distribution of Downtime (Minutes)
+```{r}
+# Plot downtime distribution
+# Zoom in on downtimes below 100 minutes
+ggplot(data, aes(x = ACTUAL_WORK_IN_MINUTES)) +
+  geom_histogram(binwidth = 5, fill = "gray", color = "red") +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(title = "Distribution of Downtime)", 
+       x = "Downtime (Minutes)", 
+       y = "Count")
+
+### Removing 0 downtime values...
+# Filter out zero downtime
+non_zero_downtime <- data %>% filter(ACTUAL_WORK_IN_MINUTES > 0)
+
+# Plot again
+ggplot(non_zero_downtime, aes(x = ACTUAL_WORK_IN_MINUTES)) +
+  geom_histogram(binwidth = 5, fill = "gray", color = "red") +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(title = "Distribution of Downtime", 
+       x = "Downtime (Minutes)", 
+       y = "Count")
+
+```
+**Insights**
+The distribution of downtime reveals significant peaks around 20, 50, and 90 minutes, indicating that many breakdowns are resolved quickly, while others take longer due to potentially more complex issues. Short downtimes around 20 minutes may reflect minor malfunctions or efficient repairs, while the peaks at 50 and 90 minutes suggest recurring issues that take longer to resolve. Understanding these patterns can help Swire Coca-Cola optimize its maintenance operations by addressing the most frequent and time-consuming problems. By targeting these downtime intervals, the company can reduce operational disruptions and improve overall efficiency. This insight supports a more data-driven approach to predictive maintenance.
+
+## Distribution of Working Time (Minutes)
+```{r}
+# Remove extreme outliers for better visualization (e.g., work longer than 1000 minutes)
+non_zero_downtime_filtered <- non_zero_downtime %>%
+  filter(ACTUAL_WORK_IN_MINUTES <= 1000)  # Adjust threshold based on data distribution
+
+# Plot after filtering outliers
+ggplot(non_zero_downtime_filtered, aes(x = ACTUAL_WORK_IN_MINUTES)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Working Time in Minutes", 
+       x = "Actual Work (minutes)", 
+       y = "Frequency") +
+  theme_minimal()
+```
+
+**Insights:**
+Removing extreme outliers (>1000 minutes) helps to focus the analysis on the more common downtimes, which tend to fall below this threshold. This allows us to better understand the typical maintenance efforts, as excessively long downtimes are rare and can skew the overall distribution. Most of the downtimes are concentrated between 0 and 1000 minutes, reflecting standard repair times across machines.
+
+## Work Orders by Plants
+```{r}
+# Plot number of work orders by plant
+ggplot(data, aes(x = PLANT_ID)) +
+  geom_bar(fill = "lightgreen", color = "black") +
+  labs(title = "Work Orders by Plant", x = "Plant", y = "Count")
+```
+*Insights**
+The bar chart showing work orders by plant highlights a significant disparity in maintenance activity across locations. Plant G261 stands out with the highest number of work orders, far exceeding the other plants. This suggests that G261 may be facing more frequent breakdowns or has a larger operation requiring more maintenance. Plants G221 and G291 also have notable volumes, while Plants G811, G812, and G816 have much fewer work orders. This variation may be due to differences in machine age, operational scale, or maintenance practices. Addressing the high volume at G261 and optimizing maintenance at the other plants could help improve overall operational efficiency.
+
+## Time to Resolve Orders by Plants
+```{r}
+# Calculate mean and median of downtime per location
+avg_downtime_by_location <- data %>%
+  group_by(PLANT_ID) %>%
+  summarize(
+    mean_downtime = mean(ACTUAL_WORK_IN_MINUTES, na.rm = TRUE),
+    median_downtime = median(ACTUAL_WORK_IN_MINUTES, na.rm = TRUE),
+    count = n()
+  ) %>%
+  arrange(desc(mean_downtime))
+
+# View the result
+print(avg_downtime_by_location)
+
+# Plot average downtime by location
+ggplot(avg_downtime_by_location, aes(x = reorder(PLANT_ID, -mean_downtime), y = mean_downtime)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  theme_minimal() +
+  labs(
+    title = "Average Downtime Duration by Location",
+    x = "Plant ID",
+    y = "Mean Downtime (Minutes)"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Insights:**
+The mean downtime across plants provides valuable context when viewed alongside the number of work orders by plant. This comparison helps identify whether higher downtime aligns with a larger volume of work orders, or if certain plants are experiencing inefficiencies in resolving issues. For example, a plant with fewer work orders but longer downtimes may suggest operational challenges or less efficient maintenance processes compared to plants with similar or higher workloads but shorter downtimes.
+
+## Work Orders by Equipment ID
+```{r}
+# Convert EQUIPMENT_ID to factor
+data$EQUIPMENT_ID <- as.factor(data$EQUIPMENT_ID)
+
+# Find top 10 equipment IDs with the most work orders
+top_equipment <- data %>%
+  count(EQUIPMENT_ID) %>%
+  top_n(10, n)
+
+# Filter the dataset for the top 10 equipment IDs
+top_data <- data %>%
+  filter(EQUIPMENT_ID %in% top_equipment$EQUIPMENT_ID)
+
+# Plot the top 10 equipment IDs
+ggplot(top_data, aes(x = EQUIPMENT_ID)) +
+  geom_bar(fill = "lightblue", color = "black") +
+  labs(title = "Top 10 Equipment IDs by Work Orders", 
+       x = "Equipment", 
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+**Insights**
+The bar chart of the top 10 equipment IDs by work orders reveals a significant data quality issue, with a large number of work orders associated with "NA" values, indicating missing or improperly recorded equipment IDs. This suggests that a substantial portion of the equipment data is incomplete, which could hinder accurate maintenance tracking. The remaining equipment IDs show a relatively even distribution of work orders, with no single piece of equipment standing out as a major contributor. Addressing the "NA" issue would provide more reliable insights and help identify which machines are responsible for the most maintenance activity, leading to better maintenance strategies.
+
+## Maintenence Type
+```{r}
+# Plot distribution of maintenance types (planned vs unplanned)
+ggplot(data, aes(x = MAINTENANCE_ACTIVITY_TYPE)) +
+  geom_bar(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of Maintenance Types", x = "Maintenance Type", y = "Count")
+
+```
+## Common Downtime Causes
+```{r}
+# Group by maintenance description and count occurrences
+common_causes <- data %>%
+  group_by(ORDER_DESCRIPTION, MAINTENANCE_TYPE_DESCRIPTION) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+# View the top 12 most common causes (all are over 1000)
+head(common_causes, 12)
+```
+
+**Insights:**
+The table above shows the 12 most common causes of downtime based on maintenance order descriptions and maintenance types. Each of these causes accounts for over 1000 occurrences. This gives Swire Coca-Cola an opportunity to focus on these high-frequency maintenance issues and investigate whether any of these can be mitigated or addressed through better predictive maintenance strategies.
+
+## Common Maintenance Types
+```{r}
+# Group by maintenance type and count occurrences
+common_maintenance_types <- data %>%
+  group_by(MAINTENANCE_TYPE_DESCRIPTION) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+# View the most common maintenance types
+print(common_maintenance_types)
+```
+
+**Insights:**
+The table above shows the most common types of maintenance activities. The Preventative Maintenance Order and Corrective Maintenance Order are easily the most frequent, with over 13,000 cases, while the remaining types all account for over 1,000 cases each. This suggests that these two maintenance orders represents a significant portion of the maintenance workload. Understanding these patterns can help prioritize improvements in maintenance processes and resource allocation.
+
+## Average Downtime By Maintenance Type
+```{r}
+# Calculate mean and median downtime by maintenance type
+downtime_by_maintenance_type <- data %>%
+  group_by(MAINTENANCE_TYPE_DESCRIPTION) %>%
+  summarize(
+    mean_downtime = mean(ACTUAL_WORK_IN_MINUTES, na.rm = TRUE),
+    median_downtime = median(ACTUAL_WORK_IN_MINUTES, na.rm = TRUE),
+    count = n()
+  ) %>%
+  arrange(desc(mean_downtime))
+
+# View the result
+print(downtime_by_maintenance_type)
+
+# Plot downtime by maintenance type
+ggplot(downtime_by_maintenance_type, aes(x = reorder(MAINTENANCE_TYPE_DESCRIPTION, -mean_downtime), y = mean_downtime)) +
+  geom_bar(stat = "identity", fill = "lightcoral") +
+  theme_minimal() +
+  labs(
+    title = "Average Downtime Duration by Maintenance Type",
+    x = "Maintenance Type",
+    y = "Mean Downtime (Minutes)"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+**Insights:**
+The average downtime by maintenance type reveals significant differences in how long various types of maintenance activities take to resolve. Maintenance types with higher mean downtimes may indicate more complex repairs or inefficiencies in addressing certain issues. This information helps identify which types of maintenance tasks should be prioritized for process improvements to reduce overall downtime and enhance operational efficiency.
+
+## Temporal Analysis
+```{r}
+# Convert date columns to Date format for analysis
+# data$EXECUTION_START_DATE <- as.Date(data$EXECUTION_START_DATE, format = "%Y-%m-%d")
+
+# Plot downtime trends by month or season (grouped by EXECUTION_START_DATE)
+# ggplot(data, aes(x = EXECUTION_START_DATE, y = ACTUAL_WORK_IN_MINUTES)) +
+#   geom_line() +
+#   labs(title = "Downtime Trends Over Time", x = "Date", y = "Downtime (Minutes)")
+
+# Aggregate by month
+# data$month <- format(data$EXECUTION_START_DATE, "%Y-%m")  # Extract month and year
+# monthly_downtime <- data %>%
+#   group_by(month) %>%
+#   summarise(total_downtime = sum(ACTUAL_WORK_IN_MINUTES, na.rm = TRUE))
+
+# Plot aggregated data
+# ggplot(monthly_downtime, aes(x = as.Date(month), y = total_downtime)) +
+#   geom_line() +
+#   labs(title = "Total Downtime by Month", x = "Date", y = "Total Downtime (Minutes)")
+
+```
+
+## Correlation Analysis
+```{r}
+# Subset numeric columns
+numeric_data <- data[, sapply(data, is.numeric)]
+
+# Correlation matrix
+cor_matrix <- cor(numeric_data, use="complete.obs")
+print(cor_matrix)
+
+# Visualize the correlation matrix using corrplot
+corrplot(cor_matrix, method = "circle")
+```
+
+**Insights:**
+The correlation matrix helps reveal the strength and direction of relationships between numeric variables in the dataset. For instance, variables with strong positive or negative correlations could indicate dependencies that are important for further analysis. Identifying highly correlated features may also help simplify the modeling process by highlighting potential redundancies or areas for dimensionality reduction.
+
+**Results:**
+- This exploratory data analysis provided valuable insights into machine downtime and maintenance patterns within Swire Coca-Cola’s production plants. The following key findings emerged from the analysis:
+
+- Downtime Distribution:
+Downtime across machines tends to cluster around 20, 50, and 90 minutes, suggesting that certain breakdowns are resolved quickly, while others take significantly longer, potentially due to more complex issues. By focusing on these frequent downtime intervals, Swire Coca-Cola can identify and address recurring issues to improve operational efficiency.
+
+- Work Orders by Plant:
+Plant G261 stands out with the highest number of work orders, indicating either a larger operational scale or more frequent breakdowns compared to other plants. Addressing the inefficiencies or higher maintenance needs at this plant could yield significant improvements. Plants G221 and G291 also have notable volumes of work orders, which warrants further investigation into their maintenance practices.
+
+- Time to Resolve Orders:
+The analysis revealed that plants with fewer work orders but longer downtimes may face operational challenges or inefficiencies in their maintenance processes. For example, plants with similar workloads but shorter downtimes may have more effective repair processes. Optimizing maintenance practices across plants with high downtime could help streamline operations and reduce costs.
+
+- Equipment Maintenance Patterns:
+A significant data quality issue was observed, with many work orders associated with missing or improperly recorded equipment IDs. Addressing these data quality issues would enhance Swire Coca-Cola’s ability to track and optimize maintenance activities for specific machines.
+
+- Maintenance Type Effectiveness:
+Preventative and corrective maintenance orders accounted for the majority of work orders. Preventative maintenance is expected to reduce unplanned downtime, but further analysis is needed to confirm the effectiveness of these activities. Prioritizing preventative efforts can improve equipment longevity and reduce corrective maintenance needs.
+
+- Downtime by Maintenance Type:
+The analysis of downtime by maintenance type revealed notable differences in how long specific types of maintenance activities take. Some maintenance types exhibited significantly longer downtimes, indicating either more complex repairs or less efficient processes. These findings suggest an opportunity for process improvement to reduce downtime duration.
+
+- Temporal Analysis:
+The temporal analysis did not uncover any clear seasonal patterns in downtime, but further analysis could be beneficial to explore potential factors influencing machine breakdowns over time.
+
+- Correlation Analysis:
+The correlation analysis provided a preliminary understanding of relationships between key numeric variables in the dataset. While no extreme correlations were found, certain variables showed moderate correlations that could inform further modeling efforts.
+
+**Group Contribution:**
+
+- RJ Hazen:
+  - Distribution of Downtime (Minutes)
+  - Work Orders by Plants
+  - Work Orders by Equipment ID
+  - Insights
+
+- Marcus Needham: 
+  - Distribution of Working Time (Minutes)
+  - Time to Resolve Orders by Plants
+  - Common Downtime Causes
+  - Common Maintenance Types
+  - Average Downtime By Maintenance Type
+  - Insights
+  
+- Hunter Nilsen:
+  - Maintenence Type
+  - Correlation Analysis
+  - Insights
+  - Results
+  
